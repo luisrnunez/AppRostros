@@ -1,6 +1,7 @@
 package com.example.appreconocimientofacial;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -12,6 +13,8 @@ import android.media.ImageReader;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.speech.tts.TextToSpeech;
+import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.View;
@@ -19,7 +22,7 @@ import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
-
+import android.speech.tts.TextToSpeech.OnInitListener;
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AppCompatActivity;
@@ -42,30 +45,28 @@ import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity
         implements
-        ImageReader.OnImageAvailableListener{
-
-
+        ImageReader.OnImageAvailableListener
+        , OnInitListener{
     public static int REQUEST_CAMERA = 111;
-    public static int REQUEST_GALLERY = 222;
-
     public Bitmap mSelectedImage;
     public ImageView mImageView;
     public TextView txtResults;
+    public TextView txtResultadoFinal;
     ArrayList<String> permisosNoAprobados;
-    public Button btCamera, btGaleria;
+    public Button btCamera;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
+        textToSpeech = new TextToSpeech((Context) this, (OnInitListener) this);
         txtResults = findViewById(R.id.txtresults);
         btCamera = findViewById(R.id.btCamera);
-        btGaleria = findViewById(R.id.btGallery);
-
+        txtResultadoFinal = findViewById(R.id.txtResultadoFinal);
         ArrayList<String> permisos_requeridos = new ArrayList<String>();
         permisos_requeridos.add(Manifest.permission.CAMERA);
         permisos_requeridos.add(Manifest.permission.MANAGE_EXTERNAL_STORAGE);
@@ -77,15 +78,10 @@ public class MainActivity extends AppCompatActivity
                 111);
     }
     public void abrirCamera (View view){
+        pausa = false;
         setFragment();
     }
 
-    public void abrirGaleria (View view){
-
-        Intent i = new Intent(Intent.ACTION_PICK,
-                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI);
-        startActivityForResult(i, REQUEST_GALLERY);
-    }
     public ArrayList<String> getPermisosNoAprobados(ArrayList<String>  listaPermisos) {
         ArrayList<String> list = new ArrayList<String>();
         Boolean habilitado;
@@ -99,9 +95,7 @@ public class MainActivity extends AppCompatActivity
 
                 if(permiso.equals(Manifest.permission.CAMERA))
                     btCamera.setEnabled(habilitado);
-                else if (permiso.equals(Manifest.permission.MANAGE_EXTERNAL_STORAGE)  ||
-                        permiso.equals(Manifest.permission.READ_EXTERNAL_STORAGE))
-                    btGaleria.setEnabled(habilitado);
+
             }
         return list;
     }
@@ -112,10 +106,6 @@ public class MainActivity extends AppCompatActivity
          for(int i=0; i<permissions.length; i++){
              if(permissions[i].equals(Manifest.permission.CAMERA)){
                  btCamera.setEnabled(grantResults[i] == PackageManager.PERMISSION_GRANTED);
-             } else if(permissions[i].equals(Manifest.permission.MANAGE_EXTERNAL_STORAGE) ||
-                     permissions[i].equals(Manifest.permission.READ_EXTERNAL_STORAGE)
-             ) {
-                 btGaleria.setEnabled(grantResults[i] == PackageManager.PERMISSION_GRANTED);
              }
          }
      }
@@ -220,30 +210,63 @@ public class MainActivity extends AppCompatActivity
         }
     }
 
-    String[] labels = {"ROSTRO", "ROSTRONO"};
-    int cont = 0;
+    public void onInit(int status) {
+        if (status == TextToSpeech.SUCCESS) {
+            int result = textToSpeech.setLanguage(Locale.getDefault());
+
+            if (result == TextToSpeech.LANG_MISSING_DATA ||
+                    result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                Log.e("TextToSpeech", "Language not supported.");
+            }
+        } else {
+            Log.e("TextToSpeech", "Initialization failed.");
+        }
+    }
+    @Override
+    protected void onDestroy() {
+        if (textToSpeech != null) {
+            textToSpeech.stop();
+            textToSpeech.shutdown();
+        }
+        super.onDestroy();
+    }
+    String[] labels = {"AUDITORIO",
+            "COMEDOR COMBO ESTUDIANTIL",
+            "BIBLIOTECA",
+            "CENTRO MEDICO",
+            "COMEDOR PRINCIPAL",
+            "DEPARTAMENTO ACADEMICO",
+            "DEPARTAMENTO DE ARCHIVOS",
+            "FACULTAD DE CIENCIAS DE PEDAGOGIA",
+            "FACULTAD DE CIENCIAS EMPRESARIALES",
+            "FACULTAD DE CIENCIAS DE LA SALUD",
+            "FACULTAD DE CIECIAS SOCIALES ECONOMICAS Y FINANCIERAS",
+            "INSTITUTO DE INFORMATICA",
+            "RECTORADO",
+            "ROTONDA",
+            "DEPARTAMENTO DE INVESTIGACION",
+            "PARQUEADERO ADMINISTRATIVO",
+            "PARQUEADERO AUTORIDADES",
+            "PARQUEADERO ESTUDIANTES",
+            "PARQUEADERO INSTITUCIONAL"};
+    private TextToSpeech textToSpeech;
+    boolean pausa = false;
     private void processImage() {
         imageConverter.run();
 
         try {
             ModelUnquant model = ModelUnquant.newInstance(getApplicationContext());
-            //txtResults.setText("1");
-            // Creates inputs for reference.
+
             TensorBuffer inputFeature0 = TensorBuffer.createFixedSize(new int[]{1, 224, 224, 3}, DataType.FLOAT32);
             bitmap = Bitmap.createScaledBitmap(bitmap, 224, 224, true);
-            // inputFeature0.loadBuffer(TensorImage.fromBitmap(bitmap).getBuffer());
-            //txtResults.setText("2");
-            // Runs model inference and gets result.
 
-            //txtResults.setText("3");
             ByteBuffer byteBuffer = ByteBuffer.allocateDirect(4 * 224 * 224 * 3);
             byteBuffer.order(ByteOrder.nativeOrder());
-            //txtResults.setText("4");
-            // pixeles de imagen
+
             int [] intValues = new int[224 * 224];
             bitmap.getPixels(intValues, 0, bitmap.getWidth(), 0, 0, bitmap.getWidth(), bitmap.getHeight());
 
-            // normalizar la imagen en el bytebuffer.
+
             int pixel = 0;
             for(int i = 0; i < 224; i++){
                 for(int j = 0; j < 224; j++){
@@ -253,30 +276,23 @@ public class MainActivity extends AppCompatActivity
                     byteBuffer.putFloat((val & 0xFF) * (1.f / 255.f));
                 }
             }
-            //txtResults.setText("6");
+
             inputFeature0.loadBuffer(byteBuffer);
             ModelUnquant.Outputs outputs = model.process(inputFeature0);
             TensorBuffer outputFeature0 = outputs.getOutputFeature0AsTensorBuffer();
             float[] probabilities = outputFeature0.getFloatArray();
+            int maxIndex = getMax(probabilities);
+            String maxLabel = labels[maxIndex];
 
-// Obtener la probabilidad de "Rostro" (índice 0) y "No_Rostro" (índice 1)
-            float probRostro = probabilities[0];
-            float probNoRostro = probabilities[1];
-
-            String resultMessage;
-
-            if (probRostro > 0.5) {
-                resultMessage = "Es un rostro:   " + probRostro;
-                if (probRostro > 0.9f) {
-                    // Mostrar un Toast si la probabilidad es mayor a 0.9
-                    Toast.makeText(this, "ES UN ROSTRO", Toast.LENGTH_SHORT).show();
+            if (probabilities[maxIndex] >= 0.9f) {
+                txtResultadoFinal.setText(maxLabel);
+                if (pausa == false) {
+                    pausa = true;
+                    textToSpeech.speak(maxLabel, TextToSpeech.QUEUE_FLUSH, null, null);
                 }
-
-            } else {
-                resultMessage = "No es un rostro:    " + probRostro;
+                //textToSpeech.speak(maxLabel, TextToSpeech.QUEUE_FLUSH, null, null);
             }
-
-            txtResults.setText(resultMessage);
+            txtResults.setText("La probabilidad es: " + probabilities[maxIndex] + " para: " + maxLabel);
 
         } catch (IOException e) {
             txtResults.setText("Error al procesar Modelo");
@@ -292,6 +308,7 @@ public class MainActivity extends AppCompatActivity
         }
         return max;
     }
+
 
 
 }
